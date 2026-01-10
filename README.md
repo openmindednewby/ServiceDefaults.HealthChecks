@@ -43,6 +43,7 @@ app.Run();
 | Endpoint | Purpose | Checks | Kubernetes Probe |
 |----------|---------|--------|------------------|
 | `/health/live` | Is the app running? | Self check only | `livenessProbe` |
+| `/health/start` | Has startup finished? | Startup state only | `startupProbe` |
 | `/health/ready` | Can it handle traffic? | DB + Startup state | `readinessProbe` |
 
 ## Why Separate Endpoints?
@@ -75,7 +76,7 @@ readinessProbe:
 
 startupProbe:
   httpGet:
-    path: /health/live
+    path: /health/start
     port: 8080
   failureThreshold: 30
   periodSeconds: 5

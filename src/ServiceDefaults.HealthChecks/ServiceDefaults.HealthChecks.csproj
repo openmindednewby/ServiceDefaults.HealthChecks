@@ -10,7 +10,6 @@
 
   <ItemGroup>
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" Version="8.0.2" />
-    <PackageReference Include="FastEndpoints" Version="7.0.1" />
   </ItemGroup>
 
 </Project>

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -26,6 +27,11 @@ public static class HealthCheckExtensions
     public const string ReadyTag = "ready";
 
     /// <summary>
+    /// Tag for startup health checks. These checks verify startup/initialization has completed.
+    /// </summary>
+    public const string StartTag = "start";
+
+    /// <summary>
     /// Adds core health check services with liveness check.
     /// Call <see cref="AddPostgresReadinessCheck"/> to add database readiness.
     /// </summary>
@@ -42,7 +48,32 @@ public static class HealthCheckExtensions
             // Liveness: Always healthy if the app is running
             .AddCheck("self", () => HealthCheckResult.Healthy(), tags: [LiveTag])
             // Startup check: Gates readiness until MarkReady() is called
-            .AddCheck<StartupHealthCheck>("startup", tags: [ReadyTag]);
+            .AddCheck<StartupHealthCheck>("startup", tags: [StartTag, ReadyTag]);
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds a PostgreSQL readiness check from configuration if the connection string is present.
+    /// </summary>
+    /// <typeparam name="TBuilder">The host builder type.</typeparam>
+    /// <param name="builder">The host application builder.</param>
+    /// <param name="connectionStringName">Connection string name in configuration (default: "PostgressConnection").</param>
+    /// <param name="name">Health check name (default: "postgres").</param>
+    /// <param name="timeout">Query timeout (default: 2 seconds).</param>
+    /// <returns>The builder for chaining.</returns>
+    public static TBuilder AddPostgresReadinessCheckFromConfiguration<TBuilder>(
+        this TBuilder builder,
+        string connectionStringName = "PostgressConnection",
+        string name = "postgres",
+        TimeSpan? timeout = null)
+        where TBuilder : IHostApplicationBuilder
+    {
+        var connectionString = builder.Configuration.GetConnectionString(connectionStringName);
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            builder.AddPostgresReadinessCheck(connectionString, name: name, timeout: timeout);
+        }
 
         return builder;
     }
@@ -76,19 +107,18 @@ public static class HealthCheckExtensions
     /// <summary>
     /// Maps health check endpoints for Kubernetes probes using standard ASP.NET Core health checks:
     /// - /health/live - Liveness probe (is the app responsive?)
+    /// - /health/start - Startup probe (has initialization completed?)
     /// - /health/ready - Readiness probe (can the app handle traffic?)
     /// </summary>
-    /// <remarks>
-    /// For FastEndpoints Swagger visibility, the FastEndpoints in this package are auto-discovered.
-    /// Simply don't call this method and the LivenessEndpoint/ReadinessEndpoint will be used instead.
-    /// </remarks>
     /// <param name="app">The web application.</param>
     /// <param name="liveEndpoint">Liveness endpoint path (default: /health/live).</param>
+    /// <param name="startEndpoint">Startup endpoint path (default: /health/start).</param>
     /// <param name="readyEndpoint">Readiness endpoint path (default: /health/ready).</param>
     /// <returns>The app for chaining.</returns>
     public static WebApplication MapHealthCheckEndpoints(
         this WebApplication app,
         string liveEndpoint = "/health/live",
+        string startEndpoint = "/health/start",
         string readyEndpoint = "/health/ready")
     {
         // Liveness: Only checks tagged with "live"
@@ -96,6 +126,14 @@ public static class HealthCheckExtensions
         var liveBuilder = app.MapHealthChecks(liveEndpoint, new HealthCheckOptions
         {
             Predicate = check => check.Tags.Contains(LiveTag),
+            ResponseWriter = WriteResponse
+        });
+
+        // Startup: Only checks tagged with "start"
+        // Gates startup until MarkAsReady() is called
+        var startBuilder = app.MapHealthChecks(startEndpoint, new HealthCheckOptions
+        {
+            Predicate = check => check.Tags.Contains(StartTag),
             ResponseWriter = WriteResponse
         });
 
@@ -108,8 +146,8 @@ public static class HealthCheckExtensions
         });
 
         // Standard ASP.NET Core health checks are excluded from OpenAPI by default
-        // For Swagger visibility, use the FastEndpoints (auto-discovered)
         liveBuilder.ExcludeFromDescription();
+        startBuilder.ExcludeFromDescription();
         readyBuilder.ExcludeFromDescription();
 
         return app;
