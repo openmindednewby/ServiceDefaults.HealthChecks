@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -73,10 +74,14 @@ public static class HealthCheckExtensions
     }
 
     /// <summary>
-    /// Maps health check endpoints for Kubernetes probes:
+    /// Maps health check endpoints for Kubernetes probes using standard ASP.NET Core health checks:
     /// - /health/live - Liveness probe (is the app responsive?)
     /// - /health/ready - Readiness probe (can the app handle traffic?)
     /// </summary>
+    /// <remarks>
+    /// For FastEndpoints Swagger visibility, the FastEndpoints in this package are auto-discovered.
+    /// Simply don't call this method and the LivenessEndpoint/ReadinessEndpoint will be used instead.
+    /// </remarks>
     /// <param name="app">The web application.</param>
     /// <param name="liveEndpoint">Liveness endpoint path (default: /health/live).</param>
     /// <param name="readyEndpoint">Readiness endpoint path (default: /health/ready).</param>
@@ -88,7 +93,7 @@ public static class HealthCheckExtensions
     {
         // Liveness: Only checks tagged with "live"
         // Should NOT check external dependencies
-        app.MapHealthChecks(liveEndpoint, new HealthCheckOptions
+        var liveBuilder = app.MapHealthChecks(liveEndpoint, new HealthCheckOptions
         {
             Predicate = check => check.Tags.Contains(LiveTag),
             ResponseWriter = WriteResponse
@@ -96,11 +101,16 @@ public static class HealthCheckExtensions
 
         // Readiness: Only checks tagged with "ready"
         // Includes database and startup state
-        app.MapHealthChecks(readyEndpoint, new HealthCheckOptions
+        var readyBuilder = app.MapHealthChecks(readyEndpoint, new HealthCheckOptions
         {
             Predicate = check => check.Tags.Contains(ReadyTag),
             ResponseWriter = WriteResponse
         });
+
+        // Standard ASP.NET Core health checks are excluded from OpenAPI by default
+        // For Swagger visibility, use the FastEndpoints (auto-discovered)
+        liveBuilder.ExcludeFromDescription();
+        readyBuilder.ExcludeFromDescription();
 
         return app;
     }
@@ -132,18 +142,18 @@ public static class HealthCheckExtensions
     {
         context.Response.ContentType = "application/json";
 
-        var response = new
+        var response = new HealthCheckResponse
         {
-            status = report.Status.ToString(),
-            totalDuration = report.TotalDuration.TotalMilliseconds,
-            checks = report.Entries.Select(e => new
+            Status = report.Status.ToString(),
+            TotalDuration = report.TotalDuration.TotalMilliseconds,
+            Checks = report.Entries.Select(e => new HealthCheckEntry
             {
-                name = e.Key,
-                status = e.Value.Status.ToString(),
-                duration = e.Value.Duration.TotalMilliseconds,
-                description = e.Value.Description,
-                exception = e.Value.Exception?.Message
-            })
+                Name = e.Key,
+                Status = e.Value.Status.ToString(),
+                Duration = e.Value.Duration.TotalMilliseconds,
+                Description = e.Value.Description,
+                Exception = e.Value.Exception?.Message
+            }).ToList()
         };
 
         return context.Response.WriteAsJsonAsync(response, new JsonSerializerOptions
@@ -151,4 +161,56 @@ public static class HealthCheckExtensions
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         });
     }
+}
+
+/// <summary>
+/// Response model for health check endpoints.
+/// </summary>
+public class HealthCheckResponse
+{
+    /// <summary>
+    /// Overall health status (Healthy, Degraded, or Unhealthy).
+    /// </summary>
+    public string Status { get; set; } = default!;
+
+    /// <summary>
+    /// Total duration of all health checks in milliseconds.
+    /// </summary>
+    public double TotalDuration { get; set; }
+
+    /// <summary>
+    /// Individual health check results.
+    /// </summary>
+    public List<HealthCheckEntry> Checks { get; set; } = new();
+}
+
+/// <summary>
+/// Individual health check entry.
+/// </summary>
+public class HealthCheckEntry
+{
+    /// <summary>
+    /// Name of the health check.
+    /// </summary>
+    public string Name { get; set; } = default!;
+
+    /// <summary>
+    /// Status of this health check (Healthy, Degraded, or Unhealthy).
+    /// </summary>
+    public string Status { get; set; } = default!;
+
+    /// <summary>
+    /// Duration of this health check in milliseconds.
+    /// </summary>
+    public double Duration { get; set; }
+
+    /// <summary>
+    /// Optional description of the health check result.
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Exception message if the health check failed.
+    /// </summary>
+    public string? Exception { get; set; }
 }
