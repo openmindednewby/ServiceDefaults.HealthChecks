@@ -1,5 +1,9 @@
 # ServiceDefaults.HealthChecks
 
+> **2.0.0 is a breaking change.** The PostgreSQL readiness check moved to
+> `Dloizides.HealthChecks.Npgsql`; this package now has no third-party dependencies.
+> See CHANGELOG.md.
+
 Production-ready health check infrastructure for ASP.NET Core services with **separate liveness, readiness, and startup** endpoints - designed for Kubernetes deployments.
 
 ## Installation

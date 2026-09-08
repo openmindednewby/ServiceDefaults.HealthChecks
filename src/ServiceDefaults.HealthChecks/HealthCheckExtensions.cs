@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
@@ -33,7 +32,8 @@ public static class HealthCheckExtensions
 
     /// <summary>
     /// Adds core health check services with liveness check.
-    /// Call <see cref="AddPostgresReadinessCheck"/> to add database readiness.
+    /// Database readiness lives in a separate package so services without a
+    /// database do not take a driver dependency; see Dloizides.HealthChecks.Npgsql.
     /// </summary>
     /// <typeparam name="TBuilder">The host builder type.</typeparam>
     /// <param name="builder">The host application builder.</param>
@@ -49,57 +49,6 @@ public static class HealthCheckExtensions
             .AddCheck("self", () => HealthCheckResult.Healthy(), tags: [LiveTag])
             // Startup check: Gates readiness until MarkReady() is called
             .AddCheck<StartupHealthCheck>("startup", tags: [StartTag, ReadyTag]);
-
-        return builder;
-    }
-
-    /// <summary>
-    /// Adds a PostgreSQL readiness check from configuration if the connection string is present.
-    /// </summary>
-    /// <typeparam name="TBuilder">The host builder type.</typeparam>
-    /// <param name="builder">The host application builder.</param>
-    /// <param name="connectionStringName">Connection string name in configuration (default: "PostgressConnection").</param>
-    /// <param name="name">Health check name (default: "postgres").</param>
-    /// <param name="timeout">Query timeout (default: 2 seconds).</param>
-    /// <returns>The builder for chaining.</returns>
-    public static TBuilder AddPostgresReadinessCheckFromConfiguration<TBuilder>(
-        this TBuilder builder,
-        string connectionStringName = "PostgressConnection",
-        string name = "postgres",
-        TimeSpan? timeout = null)
-        where TBuilder : IHostApplicationBuilder
-    {
-        var connectionString = builder.Configuration.GetConnectionString(connectionStringName);
-        if (!string.IsNullOrWhiteSpace(connectionString))
-        {
-            builder.AddPostgresReadinessCheck(connectionString, name: name, timeout: timeout);
-        }
-
-        return builder;
-    }
-
-    /// <summary>
-    /// Adds PostgreSQL connectivity check to readiness probes.
-    /// </summary>
-    /// <typeparam name="TBuilder">The host builder type.</typeparam>
-    /// <param name="builder">The host application builder.</param>
-    /// <param name="connectionString">PostgreSQL connection string.</param>
-    /// <param name="name">Health check name (default: "postgres").</param>
-    /// <param name="timeout">Query timeout (default: 2 seconds).</param>
-    /// <returns>The builder for chaining.</returns>
-    public static TBuilder AddPostgresReadinessCheck<TBuilder>(
-        this TBuilder builder,
-        string connectionString,
-        string name = "postgres",
-        TimeSpan? timeout = null)
-        where TBuilder : IHostApplicationBuilder
-    {
-        builder.Services.AddHealthChecks()
-            .AddNpgSql(
-                connectionString: connectionString,
-                name: name,
-                timeout: timeout ?? TimeSpan.FromSeconds(2),
-                tags: [ReadyTag]);
 
         return builder;
     }
