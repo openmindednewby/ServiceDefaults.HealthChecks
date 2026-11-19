@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0
+
+- MGMT-PORT-1 "Management endpoints never share the public port": `HealthChecks:EnableManagementPort` (or `AddHealthCheckDefaults(o => o.EnableManagementPort = true)`) answers `/health/live`, `/health/start` and `/health/ready` only on `HealthChecks:ManagementPort` (default 8081), checked on `Connection.LocalPort`; every other port answers 404. Off by default, so existing hosts are unchanged.
+- `RequireManagementPort(port)` endpoint extension, public, so Metrics.Client and Dloizides.ServiceDefaults can drop their internal copies.
+
 ## 2.0.0 - BREAKING
 
 - **Removed** `AddPostgresReadinessCheck` and `AddPostgresReadinessCheckFromConfiguration`.
