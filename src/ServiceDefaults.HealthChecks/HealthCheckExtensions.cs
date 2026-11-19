@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 
 namespace ServiceDefaults.HealthChecks;
@@ -43,6 +45,8 @@ public static class HealthCheckExtensions
     {
         // Register StartupState as singleton for startup-aware readiness
         builder.Services.AddSingleton<StartupState>();
+        builder.Services.AddOptions<HealthCheckDefaultsOptions>()
+            .Bind(builder.Configuration.GetSection(HealthCheckDefaultsOptions.SectionName));
 
         builder.Services.AddHealthChecks()
             // Liveness: Always healthy if the app is running
@@ -50,6 +54,15 @@ public static class HealthCheckExtensions
             // Startup check: Gates readiness until MarkReady() is called
             .AddCheck<StartupHealthCheck>("startup", tags: [StartTag, ReadyTag]);
 
+        return builder;
+    }
+
+    /// <summary>Adds the health check defaults, then applies <paramref name="configure"/> over the bound settings.</summary>
+    public static TBuilder AddHealthCheckDefaults<TBuilder>(this TBuilder builder, Action<HealthCheckDefaultsOptions> configure)
+        where TBuilder : IHostApplicationBuilder
+    {
+        builder.AddHealthCheckDefaults();
+        builder.Services.Configure(configure);
         return builder;
     }
 
@@ -98,6 +111,14 @@ public static class HealthCheckExtensions
         liveBuilder.ExcludeFromDescription();
         startBuilder.ExcludeFromDescription();
         readyBuilder.ExcludeFromDescription();
+
+        var options = app.Services.GetService<IOptions<HealthCheckDefaultsOptions>>()?.Value ?? new HealthCheckDefaultsOptions();
+        if (options.EnableManagementPort)
+        {
+            liveBuilder.RequireManagementPort(options.ManagementPort);
+            startBuilder.RequireManagementPort(options.ManagementPort);
+            readyBuilder.RequireManagementPort(options.ManagementPort);
+        }
 
         return app;
     }
